@@ -1,82 +1,278 @@
 ---
 bibliography: references.bib 
 authors: # see https://quarto.org/docs/journals/authors.html for further options
-  - name: Firstname Lastname
-    orcid: 0000-0001-0002-0003
-    affiliation: "Your University"
-    country: CountryABC
+  - name: Leopold Mareis 
+    orcid: 0000-0002-2624-6522
+    affiliation: "Technical University of Munich"
+    country: Germany
 ---
 
-# Your Notebook Name
+# CausalDynamics
 
 | Resource | Information |
 |----|----|
-| Data DOI | [10.5281/zenodo.1234567](https://doi.org/10.5281/zenodo.17598199) |
-| Git + DOI | [Git](https://github.com/MaRDI4NFDI/GMCI_notebook_template/tree/683067d4f2c2d7e83f221e7bfbb0ae9b77aa93a5) [10.5281/zenodo.17598199](https://doi.org/10.5281/zenodo.17598199) |
-| Short Description | Short description of the main contributions and notebook structure |
+| Git + DOI | [Git](https://github.com/MaRDI4NFDI/) [12.3456/zenodo.11234567](https://doi.org/) |
+| Short Description | CausalDynamics is a large-scale benchmark and extensible data generation framework designed to advance the structural discovery of dynamical causal models. In this notebook, we present the datasets in the benchmark.|
 
 : {.striped}
 
-## Introduction
+## Access the Benchmark on Huggingface
 
-Write an introduction to the analysis. Give references via @Mareis_Haug_Drton_2025. The bibtex entries are saved in `references.bib`.
-
-## Loading the Data
-
-Create an R environment and save it in the file `renv.lock` with `renv::init()` and `renv::snapshot()`. For detailed information, see the [renv website](https://rstudio.github.io/renv/articles/renv.html).
-Load the R environment with our standardized loading function.
-```{r, message=TRUE, warning=TRUE, eval=FALSE}
-# activate the chunk with eval=TRUE
-source("../../load_environment.R")
+```{python}
+from datasets import load_dataset
+ds = load_dataset("kausable/CausalDynamics")
 ```
 
-Shortly describe the packages that were responsible for the R environment.
-```{r, message=FALSE, eval=FALSE}
-# Used packages, only for information.
-library(package1) # function of package1
-library(package2) # function of package2
-```
+```{python}
+import netCDF4
+import numpy as np
+import networkx as nx
+import matplotlib.pyplot as plt
+import matplotlib as mpl
 
-Load the data. Prefereably from Zenodo:
-```{r, message = FALSE, warning=FALSE, eval=FALSE}
-# Load Data
-zenodo <- ZenodoManager$new(logger = NULL)
-record <- zenodo$getRecordByDOI("10.5281/zenodo.1234567")
-files <- record$listFiles(pretty = TRUE)
-alarm <- as.matrix(read.csv(files[1, 4]))
+def build_causal_graph(nc):
+    """Build a NetworkX DiGraph from a CausalDynamics NetCDF file."""
+    adj = np.array(nc.variables["adjacency_matrix"][:])           # (node_in, node_out) instant edgesb
+    if 'adjacency_matrix_time_edges' in nc.variables.keys():
+        adj_time = np.array(nc.variables["adjacency_matrix_time_edges"][:])  # lagged edges
+    n = adj.shape[0]
+
+    G = nx.DiGraph()
+    G.add_nodes_from(range(n))
+
+    for i in range(n):
+        for j in range(n):
+            if adj[i, j] > 0:
+                G.add_edge(i, j, label="regular")
+            if 'adjacency_matrix_time_edges' in nc.variables.keys():
+                if adj_time[i, j] > 0:
+                    G.add_edge(i, j, label="lagged")
+
+    return G
+
+
+def plot_scm_from_nc(
+    raw_bytes,
+    key=None,
+    ax=None,
+    title=None,
+    figsize=(6, 5),
+    node_size=900,
+    font_size=9,
+    root_node_color="grey",
+    node_color="orange",
+):
+    """
+    Plot the Structural Causal Model graph from a raw CausalDynamics NetCDF bytes object.
+    Solid arrows = instantaneous edges, dashed arrows = lagged edges.
+    Grey nodes = root nodes (no incoming causes), orange = non-root.
+    """
+    nc = netCDF4.Dataset("in-memory", memory=raw_bytes)
+    G = build_causal_graph(nc)
+    root_nodes = np.array(nc.variables["root_nodes"][:]).astype(bool)
+    nc.close()
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+
+    pos = nx.spring_layout(G, seed=42)
+
+    node_colors = [root_node_color if root_nodes[n] else node_color for n in G.nodes()]
+
+    nx.draw_networkx_nodes(G, pos, ax=ax, node_size=node_size, node_color=node_colors)
+    nx.draw_networkx_labels(G, pos, ax=ax, font_size=font_size)
+
+    # Categorize edges
+    regular_edges, lagged_edges, both_edges = [], [], []
+    edge_types = {}
+    for u, v, d in G.edges(data=True):
+        k = (u, v)
+        edge_types.setdefault(k, {"regular": False, "lagged": False})
+        if d.get("label") == "lagged":
+            edge_types[k]["lagged"] = True
+        else:
+            edge_types[k]["regular"] = True
+
+    for k, t in edge_types.items():
+        if t["regular"] and t["lagged"]:
+            both_edges.append(k)
+        elif t["regular"]:
+            regular_edges.append(k)
+        else:
+            lagged_edges.append(k)
+
+    draw_opts = dict(ax=ax, arrowsize=20, width=2, connectionstyle="arc3,rad=0.15")
+    if regular_edges:
+        nx.draw_networkx_edges(G, pos, edgelist=regular_edges, style="solid", **draw_opts)
+    if lagged_edges:
+        nx.draw_networkx_edges(G, pos, edgelist=lagged_edges, style="dashed", **draw_opts)
+    if both_edges:
+        nx.draw_networkx_edges(G, pos, edgelist=both_edges, style="-.", **draw_opts)
+
+    # Legend
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], color="black", lw=2, linestyle="-",  label="Instantaneous"),
+        Line2D([0], [0], color="black", lw=2, linestyle="--", label="Lagged"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=root_node_color,
+               markersize=10, label="Root node"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=node_color,
+               markersize=10, label="Node"),
+    ]
+    ax.legend(handles=legend_elements, loc="best", fontsize=7)
+    #ax.set_title(title or (key or "Causal Graph"))
+    ax.axis("off")
+    return ax
+
+
+# ── Combined plot: SCM graph + 3D trajectories ───────────────────────────────
+def plot_sample(ds, idx):
+    raw = ds["train"]["nc"][idx]
+    key = ds["train"]["__key__"][idx]
+
+    nc = netCDF4.Dataset("in-memory", memory=raw)
+    time_series = np.array(nc.variables["time_series"][:])  # (T, system, node, dim)
+    root_nodes  = np.array(nc.variables["root_nodes"][:]).astype(bool)
+    n_nodes = time_series.shape[2]
+    nc.close()
+
+    fig = plt.figure(figsize=(5 + 4 * n_nodes, 5))
+    # Left: causal graph
+    ax_graph = fig.add_subplot(1, n_nodes + 1, 1)
+    plot_scm_from_nc(raw, key=key, ax=ax_graph)
+
+    # Right: 3D trajectories (system=0)
+    data = time_series[:, 0, :, :]  # (T, node, dim)
+    final_state = data[-1]
+    colors = ["grey" if root_nodes[n] else "orange" for n in range(n_nodes)]
+    for node in range(n_nodes):
+        ax = fig.add_subplot(1, n_nodes + 1, node + 2, projection="3d")
+        traj = data[:, node, :]
+        ax.plot(*traj.T, c=colors[node], alpha=0.7)
+        ax.scatter(*final_state[node], c=colors[node],
+                   marker="*" if root_nodes[node] else "o",
+                   s=200 if root_nodes[node] else 100)
+        ax.set_title(f"{'Root ' if root_nodes[node] else ''}Node {node}", fontsize=9)
+        ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
+        ax.set_box_aspect([1, 1, 1])
+        ax.set_axis_off()
+
+    fig.suptitle(key, fontsize=8, y=1.01)
+    plt.tight_layout()
+    return fig
+
+# Usage
+fig = plot_sample(ds, idx=41)
+plt.show()
+fig = plot_sample(ds, idx=24)
+plt.show()
+fig = plot_sample(ds, idx=650)
+plt.show()
 ```
 
 ## Analysis
 
 Write some educational analysis text and carry out the analysis.
 
-```{r}
-mean(c(1 + 2, 3 * 4))
-```
-
-Analysis in other languages, e.g., Python are welcome as well. 
 ```{python}
--1 / -2
+import re
+from collections import Counter, defaultdict
+
+def parse_key(key):
+    """Parse a __key__ string into structured metadata."""
+    parts = key.split("/")
+    domain = parts[0]  # 'climate' or 'coupled'
+    info = {"domain": domain, "raw": key}
+
+    if domain == "climate":
+        info["subdomain"] = parts[1]
+        filename = parts[-1]
+        m = re.match(r"([A-Z0-9]+)_N(\d+)_T(\d+)", filename)
+        if m:
+            info["driver"] = m.group(1)
+            info["N"] = int(m.group(2))
+            info["T"] = int(m.group(3))
+
+    elif domain == "coupled":
+        config_str = parts[1]
+        filename = parts[-1]
+
+        # Parse config
+        for param in ["coupling", "noise", "systems", "confounder",
+                      "standardize", "timelag", "activation"]:
+            m = re.search(rf"{param}=([^_]+)", config_str)
+            if m:
+                val = m.group(1)
+                # Type coerce
+                if val in ("True", "False"):
+                    val = val == "True"
+                else:
+                    try: val = int(val)
+                    except ValueError:
+                        try: val = float(val)
+                        except ValueError: pass
+                info[param] = val
+
+        # Parse filename
+        m = re.match(r"S([A-Z]+)_N(\d+)_T(\d+)_seed(\d+)", filename)
+        if m:
+            info["system_type"] = m.group(1)
+            info["N"] = int(m.group(2))
+            info["T"] = int(m.group(3))
+            info["seed"] = int(m.group(4))
+
+    return info
+
+
+def summarize_dataset(keys):
+    records = [parse_key(k) for k in keys]
+
+    print("=" * 60)
+    print(f"TOTAL SAMPLES: {len(records)}")
+    print("=" * 60)
+
+    # Domain split
+    domains = Counter(r["domain"] for r in records)
+    print(f"\n{'DOMAIN COUNTS':}")
+    for d, c in domains.most_common():
+        print(f"  {d}: {c}")
+
+    # --- Climate ---
+    climate = [r for r in records if r["domain"] == "climate"]
+    if climate:
+        print(f"\n--- CLIMATE ({len(climate)} samples) ---")
+        print("  Subdomains:", Counter(r.get("subdomain") for r in climate))
+        print("  Drivers:", Counter(r.get("driver") for r in climate))
+        print("  N values:", Counter(r.get("N") for r in climate))
+        print("  T values:", Counter(r.get("T") for r in climate))
+
+    # --- Coupled ---
+    coupled = [r for r in records if r["domain"] == "coupled"]
+    if coupled:
+        print(f"\n--- COUPLED ({len(coupled)} samples) ---")
+
+        for field, label in [
+            ("coupling",    "Coupling type"),
+            ("system_type", "System type"),
+            ("noise",       "Noise level"),
+            ("systems",     "Num systems"),
+            ("confounder",  "Confounder"),
+            ("timelag",     "Time lag"),
+            ("activation",  "Activation"),
+            ("N",           "N (nodes)"),
+            ("T",           "T (timesteps)"),
+            ("seed",        "Seeds"),
+        ]:
+            c = Counter(r.get(field) for r in coupled)
+            print(f"\n  {label}:")
+            for val, cnt in sorted(c.items(), key=lambda x: str(x[0])):
+                print(f"    {val}: {cnt}")
+
+    return records
+
+
+# Run on full dataset
+keys = ds["train"]["__key__"][:]
+records = summarize_dataset(keys)
 ```
 
-```{r, message=FALSE, warning=FALSE, eval=FALSE}
-# activate the chunk with eval=TRUE
-source("../../close_environment.R")
-```
-
-## Citing this Notebook {.unnumbered}
-
-Please cite XYZ with the following bib item.
-
-``` bibtex
-@article{XYZ
-}
-```
-
-When using the ABC dataset, please give credit to the original author: Author year.
-
-## Additional Information {.unnumbered}
-
-**License Information:** Please follow the above DOI for license information of data and code.
-
-**Contact:** If you have suggestions, feel free to [create an issue](https://github.com/username/git-project/issues) or contact the authors (your@mail.address).
