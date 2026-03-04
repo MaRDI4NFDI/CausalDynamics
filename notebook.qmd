@@ -13,7 +13,7 @@ authors: # see https://quarto.org/docs/journals/authors.html for further options
 
 | Resource | Information |
 |----|----|
-| Git + DOI | [Git](https://github.com/MaRDI4NFDI/) [10.5281/zenodo.18862828](https://doi.org/10.5281/zenodo.18862828) |
+| Git + DOI | [Git](https://github.com/MaRDI4NFDI/CausalDynamics.git) [10.5281/zenodo.18862828](https://doi.org/10.5281/zenodo.18862828) |
 | Short Description | CausalDynamics is a large-scale benchmark and extensible data generation framework designed to advance the structural discovery of dynamical causal models. In this notebook, we present the datasets in the benchmark. |
 
 : {.striped}
