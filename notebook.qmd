@@ -16,6 +16,8 @@ authors: # see https://quarto.org/docs/journals/authors.html for further options
 
 : {.striped}
 
+This notebook was adapted from the [CausalDynamics Quickstart](https://kausable.github.io/CausalDynamics/notebooks/quickstart.html) @herdeanu2025causaldynamics.
+
 ## Introduction
 
 Most existing benchmarks for causal discovery are built on synthetic data from static causal graphs or auto-regressive models, and real-world examples that exist lack a fully resolved causal ground truth. As a result, most methods are validated on toy systems or real-world data that fail to capture continuous state-space developments, complex feedback loops, stochasticity, and regime shifts. This is making it impossible to isolate algorithmic limitations from dataset characteristics. The paper *CausalDynamics: A large‐scale benchmark for structural discovery of dynamical causal models* (@herdeanu2025causaldynamics) developed jointly by kausable GmbH and Columbia University addressed these issues and was accepted at NeurIPS 2025 (Datasets & Benchmarks Track). Next to the benchmark collection presented here, users of their Python package [*causaldynamics*](https://github.com/kausable/CausalDynamics) can generate custom datasets.
