@@ -12,11 +12,40 @@ authors: # see https://quarto.org/docs/journals/authors.html for further options
 | Resource | Information |
 |----|----|
 | Git + DOI | [Git](https://github.com/MaRDI4NFDI/) [12.3456/zenodo.11234567](https://doi.org/) |
-| Short Description | CausalDynamics is a large-scale benchmark and extensible data generation framework designed to advance the structural discovery of dynamical causal models. In this notebook, we present the datasets in the benchmark.|
+| Short Description | CausalDynamics is a large-scale benchmark and extensible data generation framework designed to advance the structural discovery of dynamical causal models. In this notebook, we present the datasets in the benchmark. |
 
 : {.striped}
 
-## Access the Benchmark on Huggingface
+## Introduction
+
+Most existing benchmarks for causal discovery are built on synthetic data from static causal graphs or auto-regressive models, and real-world examples that exist lack a fully resolved causal ground truth. As a result, most methods are validated on toy systems or real-world data that fail to capture continuous state-space developments, complex feedback loops, stochasticity, and regime shifts. This is making it impossible to isolate algorithmic limitations from dataset characteristics. The paper *CausalDynamics: A large‐scale benchmark for structural discovery of dynamical causal models* (@herdeanu2025causaldynamics) developed jointly by kausable GmbH and Columbia University addressed these issues and was accepted at NeurIPS 2025 (Datasets & Benchmarks Track). Next to the benchmark collection presented here, users of their Python package [*causaldynamics*](https://github.com/kausable/CausalDynamics) can generate custom datasets.
+
+## Statistical Model
+
+We refer to the paper *CausalDynamics: A large‐scale benchmark for structural discovery of dynamical causal models* (@herdeanu2025causaldynamics) for the details of the statistical model:
+
+**Dynamical system.** For each time $t \in \mathbb{R}_{\geq0}$, we characterize a dynamical system with an associated state $x(t) \in \mathbb{R}^N$ for $N \in \mathbb{N}$. In general, the description of the system dynamics are given through differential equations of the form: $$
+    \frac{dx}{dt} = f(t,x) + \delta \frac{dW_t}{dt}
+$$ where $f$ is a function, the solution $x(t)$ depends on the initial condition $x(t_0) = x_0$ at time $t_0$, and $\delta$ is the noise amplitude of the Brownian process $W_t$. When $\delta = 0$, this equation becomes *ordinary differential equations* (ODEs) whereas $\delta > 0$ yields *stochastic differential equations* (SDEs).
+
+**Structural causal models.** We describe causal mechanisms through structural causal models (SCMs) such that a system of $d$ random variables $\boldsymbol{x} = \{x_1, \dots, x_d \}$ is expressed as an arbitrary function $f^k$ of its direct parents (causes) $\boldsymbol{x}_{\text{PA}_k}$ and an exogenous distribution of noise $\epsilon^k$: $$
+    x_k := f^k(\boldsymbol{x}_{\text{PA}_k}, \epsilon^k) \text{, for } k = 1, \dots, d
+$$ For dynamical systems, we can combine the previous equations for a collection of $d$ differential equations to define *structural dynamical causal models* (SDCM): $$
+\frac{\text{d}}{\text{d}t} x_{k,t} := f^k(\boldsymbol{x}_{{\text{PA}_k,t}}, \delta), \text{with } x_{k,0} = x_k(0)
+$$ where $k \in \{1, \dots, d\}$.
+
+**Causal graph.** The structural assignment of the SCM induces a *directed acyclic graph* (DAG) $\mathcal{G} = (\mathcal{V},\mathcal{E})$ over the variables $x_k$. $\mathcal{G}$ includes nodes $v_k \in \mathcal{V}$ for every $x_k \in \boldsymbol{x}$ and directed edges $(k,i) \in \mathcal{E}$ if $x_k \in \boldsymbol{x}_{\text{PA}_i}$ \cite{ormaniec2025standardizingstructuralcausalmodels}. Edges are represented in a squared *adjacency matrix* $\mathcal{A} \in \mathbb{R}^{k\text{x}i}$ with each entry $a_{ki} \in \mathcal{A}: a_{ki} = 1$ if $x_i$ is causally impacted by $x_k$, else $a_{ki} = 0$. A corresponding graphical representation of the DAG is shown in Figure below:
+![](sdcm.png)
+
+## The Benchmark on Huggingface
+
+The benchmark is organized into three complexity tiers: (1) a simple tier with true causal graphs for hundreds of 3D chaotic dynamical systems; (2) a coupled tier that adapts a graph generation algorithm to combine deterministic and stochastic dynamical systems via periodic coupling functions, constructing thousands of complex graph structures; and (3) a climate tier with true causal graphs for two idealized atmosphere-ocean models, including multiple coupling experiments for different modes of variability.
+
+All data is available on [Huggingface](https://huggingface.co/datasets/kausable/CausalDynamics). The following display visualizes three exemplary graphs and time series realizations.
+
+```{r, include=FALSE}
+# without an initial R chunk, jupyter does not call Python.. -> ignore.
+```
 
 ```{python}
 from datasets import load_dataset
@@ -24,6 +53,7 @@ ds = load_dataset("kausable/CausalDynamics")
 ```
 
 ```{python}
+#| echo: false
 import netCDF4
 import numpy as np
 import networkx as nx
@@ -119,16 +149,17 @@ def plot_scm_from_nc(
         Line2D([0], [0], marker="o", color="w", markerfacecolor=node_color,
                markersize=10, label="Node"),
     ]
-    ax.legend(handles=legend_elements, loc="best", fontsize=7)
+    ax.legend(handles=legend_elements, loc="best", fontsize=12)
     #ax.set_title(title or (key or "Causal Graph"))
     ax.axis("off")
     return ax
 
 
 # ── Combined plot: SCM graph + 3D trajectories ───────────────────────────────
-def plot_sample(ds, idx):
-    raw = ds["train"]["nc"][idx]
-    key = ds["train"]["__key__"][idx]
+def plot_sample(ds, ds_row):
+    raw = ds["train"]["nc"][ds_row]
+    key = ds["train"]["__key__"][ds_row]
+    print("key =", key)
 
     nc = netCDF4.Dataset("in-memory", memory=raw)
     time_series = np.array(nc.variables["time_series"][:])  # (T, system, node, dim)
@@ -136,9 +167,11 @@ def plot_sample(ds, idx):
     n_nodes = time_series.shape[2]
     nc.close()
 
-    fig = plt.figure(figsize=(5 + 4 * n_nodes, 5))
     # Left: causal graph
-    ax_graph = fig.add_subplot(1, n_nodes + 1, 1)
+    max_per_row = 4
+    n_row = int(np.ceil((n_nodes + 1) / max_per_row))
+    fig = plt.figure(figsize=(5 * 4, 5 * n_row + 1))
+    ax_graph = fig.add_subplot(n_row, max_per_row, 1)
     plot_scm_from_nc(raw, key=key, ax=ax_graph)
 
     # Right: 3D trajectories (system=0)
@@ -146,35 +179,77 @@ def plot_sample(ds, idx):
     final_state = data[-1]
     colors = ["grey" if root_nodes[n] else "orange" for n in range(n_nodes)]
     for node in range(n_nodes):
-        ax = fig.add_subplot(1, n_nodes + 1, node + 2, projection="3d")
+        ax = fig.add_subplot(n_row, max_per_row, node + 2, projection="3d")
         traj = data[:, node, :]
         ax.plot(*traj.T, c=colors[node], alpha=0.7)
         ax.scatter(*final_state[node], c=colors[node],
                    marker="*" if root_nodes[node] else "o",
                    s=200 if root_nodes[node] else 100)
-        ax.set_title(f"{'Root ' if root_nodes[node] else ''}Node {node}", fontsize=9)
+        ax.set_title(f"{'Root ' if root_nodes[node] else ''}Node {node}", fontsize=19)
         ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
         ax.set_box_aspect([1, 1, 1])
         ax.set_axis_off()
 
-    fig.suptitle(key, fontsize=8, y=1.01)
     plt.tight_layout()
+    plt.show()
     return fig
-
-# Usage
-fig = plot_sample(ds, idx=41)
-plt.show()
-fig = plot_sample(ds, idx=24)
-plt.show()
-fig = plot_sample(ds, idx=650)
-plt.show()
 ```
 
-## Analysis
+```{python}
+#| eval: false
+import netCDF4
+import numpy as np
+import networkx as nx
+import matplotlib.pyplot as plt
+import matplotlib as mpl
 
-Write some educational analysis text and carry out the analysis.
+def build_causal_graph(...):
+    """Build a NetworkX DiGraph from a CausalDynamics NetCDF file."""
+    ...
+
+def plot_scm_from_nc(...):
+    """
+    Plot the Structural Causal Model graph from a raw CausalDynamics NetCDF 
+    bytes object.
+    Solid arrows = instantaneous edges, dashed arrows = lagged edges.
+    Grey nodes = root nodes (no incoming causes), orange = non-root.
+    """
+    ...
+
+def plot_sample(ds, ds_row):
+    """ Combined plot: SCM graph + 3D trajectories """
+    ...
+```
 
 ```{python}
+fig = plot_sample(ds, ds_row=41)
+fig = plot_sample(ds, ds_row=24)
+fig = plot_sample(ds, ds_row=194)
+```
+
+## Summary of the Benchmark Collection
+
+In total the benchmark contains 585 simple, 14,096 coupled, and 12 climate graphs (in total 14,693 graphs). Each graph constitutes 5 randomly initialized trajectories of 1,000 time steps. The HuggingFace dataset with contains 152,077 rows because each graph is replicated across multiple parameter settings (noise, confounder, timelag, activation, seed).
+
+```{python}
+#| eval: false
+import re
+from collections import Counter, defaultdict
+
+def parse_key(key):
+    """Parse a __key__ string into structured metadata."""
+    ...
+
+def summarize_dataset(keys):
+    """Summarize and print structured metadata."""
+    ...
+
+keys = ds["train"]["__key__"][:]
+records = summarize_dataset(keys)
+```
+
+```{python}
+#| echo: false
 import re
 from collections import Counter, defaultdict
 
@@ -276,3 +351,16 @@ keys = ds["train"]["__key__"][:]
 records = summarize_dataset(keys)
 ```
 
+## Usage
+
+The primary use case is benchmarking causal discovery algorithms. Taking the time_series as input, running an algorithm allows for comparisons the inferred adjacency matrix against the ground-truth adjacency_matrix / adjacency_matrix_summary. The evaluation is done by comparing true and predicted adjacency matrices using AUROC, AUPRC, and Structural Hamming Distance (SHD). Candidate algorithms span constraint-based methods (PC, FCI), score-based methods (GES, NOTEARS), Granger causality, transfer entropy, PCMCI (for time-lagged effects), and neural/Koopman-based approaches. The tiered difficulty structure provides staged levels to isolate the limitations of causal discovery methodology.
+
+## Citing this Notebook {.unnumbered}
+
+Please cite @herdeanu2025causaldynamics and @Mareis_Haug_Drton_2025. 
+
+When using the CausalDynamics benchmarking dataset, please give credit to the original authors: @herdeanu2025causaldynamics
+
+## Additional Information {.unnumbered}
+
+**License Information:** Please follow the above DOI for license information of data and code.
