@@ -18,7 +18,7 @@ authors: # see https://quarto.org/docs/journals/authors.html for further options
 
 : {.striped}
 
-This notebook was adapted from the [CausalDynamics Quickstart](https://kausable.github.io/CausalDynamics/notebooks/quickstart.html) @herdeanu2025causaldynamics.
+This notebook was adapted from the [CausalDynamics Quickstart](https://kausable.github.io/CausalDynamics/notebooks/quickstart.html) (@herdeanu2025causaldynamics).
 
 ## Introduction
 
