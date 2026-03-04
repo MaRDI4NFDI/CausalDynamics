@@ -5,13 +5,14 @@ authors: # see https://quarto.org/docs/journals/authors.html for further options
     orcid: 0000-0002-2624-6522
     affiliation: "Technical University of Munich"
     country: Germany
+  - name: @herdeanu2025causaldynamics.
 ---
 
 # CausalDynamics
 
 | Resource | Information |
 |----|----|
-| Git + DOI | [Git](https://github.com/MaRDI4NFDI/) [12.3456/zenodo.11234567](https://doi.org/) |
+| Git + DOI | [Git](https://github.com/MaRDI4NFDI/) [10.5281/zenodo.18862828](https://doi.org/10.5281/zenodo.18862828) |
 | Short Description | CausalDynamics is a large-scale benchmark and extensible data generation framework designed to advance the structural discovery of dynamical causal models. In this notebook, we present the datasets in the benchmark. |
 
 : {.striped}
