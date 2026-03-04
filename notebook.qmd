@@ -6,6 +6,7 @@ authors: # see https://quarto.org/docs/journals/authors.html for further options
     affiliation: "Technical University of Munich"
     country: Germany
   - name: Herdeanu et al. (2025)
+    url: https://kausable.github.io/CausalDynamics/README.html
 ---
 
 # CausalDynamics
